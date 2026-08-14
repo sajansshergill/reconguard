@@ -1,0 +1,14 @@
+[project]
+name = "reconguard"
+version = "0.1.0"
+description = "Azure-native data quality & validation platform for lakehouse pipelines"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

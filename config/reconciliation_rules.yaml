@@ -1,0 +1,6 @@
+# left = payroll, right = hris
+key: employee_id
+pay_period: "2026-07"
+left_value_col: gross_pay          # actual, from payroll
+right_value_col: expected_gross    # base_salary / 12, derived on hris side
+tolerance: 1.00                    # absolute currency tolerance

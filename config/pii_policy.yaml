@@ -1,0 +1,9 @@
+# columns that must be tagged + masked, and must never reach gold
+sensitive_columns:
+  - column: national_id
+    tag: pii
+    mask: sha256
+  - column: bank_account
+    tag: pii
+    mask: sha256
+excluded_from_gold: [national_id, bank_account]

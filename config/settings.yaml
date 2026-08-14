@@ -1,0 +1,13 @@
+environment: local            # local | azure
+catalog: reconguard
+schemas:
+  bronze: bronze
+  silver: silver
+  gold: gold
+  audit: audit
+paths:                        # used in local mode (Delta on local FS)
+  raw: ./data/raw
+  bronze: ./data/bronze
+  silver: ./data/silver
+  gold: ./data/gold
+  audit: ./data/audit

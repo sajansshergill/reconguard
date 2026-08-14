@@ -1,0 +1,8 @@
+freshness_days: 3                  # max age of newest run_date
+completeness:                      # max allowed null rate per column
+  employee_id: 0.0
+  gross_pay: 0.0
+  base_salary: 0.0
+required_columns:
+  hris: [employee_id, department, national_id, base_salary, effective_date, is_current]
+  payroll: [employee_id, pay_period, gross_pay, net_pay, bank_account, run_date]
