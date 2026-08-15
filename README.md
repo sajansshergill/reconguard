@@ -197,11 +197,12 @@ reconguard/
 │   ├── setup_unity_catalog.py            # creates catalog, schemas, tags
 │   └── run_local.py                      # runs the full flow on local Spark
 │
-├── dashboard/                            # local-only Streamlit UI (not part of the pipeline)
+├── dashboard/                            # Streamlit UI (not part of the pipeline; also the hosted demo)
 │   ├── app.py                            # page layout, KPIs, tabs
 │   ├── charts.py                         # Plotly figure builders
 │   ├── theme.py                          # design tokens + CSS
 │   ├── data.py                           # Spark-free reads of the local Delta tables
+│   ├── sample_data/                      # committed snapshot, used when data/ or PySpark is absent
 │   └── requirements.txt
 │
 └── docs/
@@ -242,6 +243,8 @@ make dashboard                              # or: streamlit run dashboard/app.py
 ```
 
 It opens without a Spark session (reads Delta via `deltalake`, not PySpark); the sidebar's **Run reconciliation** / **New demo run** buttons shell out to `scripts/run_local.py` when you want fresh data.
+
+**Hosted demo:** deployed at Streamlit Community Cloud, main file `dashboard/app.py`, requirements `dashboard/requirements.txt`. PySpark isn't in that requirements file (too heavy for a read-only dashboard, unreliable on the free tier), so the hosted version disables the pipeline buttons and reads a static snapshot committed at `dashboard/sample_data/` instead of a live run — see [docs/gaps.md](docs/gaps.md).
 
 ---
 

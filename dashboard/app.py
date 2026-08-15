@@ -7,6 +7,7 @@ Reads the local Delta tables written by scripts/run_local.py (see data.py —
 no Spark session in this process, so the app itself opens fast). The sidebar
 can trigger a real pipeline run as a subprocess when you want fresh data.
 """
+import importlib.util
 import os
 import random
 import subprocess
@@ -26,6 +27,12 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 st.markdown(theme.base_css(), unsafe_allow_html=True)
+
+# The pipeline buttons shell out to scripts/run_local.py, which needs PySpark —
+# deliberately not in dashboard/requirements.txt (heavy, needs a JVM, not what a
+# hosted read-only demo needs). If it's not installed, degrade the buttons
+# honestly rather than let them fail; see docs/gaps.md.
+PIPELINE_AVAILABLE = importlib.util.find_spec("pyspark") is not None
 
 
 # ---------------------------------------------------------------------------
@@ -113,12 +120,22 @@ with st.sidebar:
     )
     st.divider()
     st.markdown("**Pipeline controls**")
-    run_clicked = st.button("▶️  Run reconciliation", use_container_width=True, type="primary")
-    demo_clicked = st.button(
-        "🎲  New demo run", use_container_width=True,
-        help="Regenerates HRIS/payroll data with a random seed and reconciles it — "
-             "use this a few times to build up run history for the trend chart.",
+    no_pipeline_help = ("Requires a local PySpark environment, not installed in this hosted "
+                         "demo. Clone the repo and run `make run` for a live pipeline.")
+    run_clicked = st.button(
+        "▶️  Run reconciliation", use_container_width=True, type="primary",
+        disabled=not PIPELINE_AVAILABLE,
+        help=None if PIPELINE_AVAILABLE else no_pipeline_help,
     )
+    demo_clicked = st.button(
+        "🎲  New demo run", use_container_width=True, disabled=not PIPELINE_AVAILABLE,
+        help=(no_pipeline_help if not PIPELINE_AVAILABLE else
+              "Regenerates HRIS/payroll data with a random seed and reconciles it — "
+              "use this a few times to build up run history for the trend chart."),
+    )
+    if not PIPELINE_AVAILABLE:
+        st.caption("📦 Hosted demo — showing a static seeded snapshot "
+                    "(`dashboard/sample_data/`), not a live pipeline run.")
 
     if run_clicked or demo_clicked:
         env = os.environ.copy()
@@ -140,9 +157,9 @@ with st.sidebar:
                 st.code((proc.stderr or proc.stdout)[-4000:])
 
     st.divider()
-    rel_data_dir = data.data_paths()["bronze"].parent.relative_to(data.REPO_ROOT)
-    st.caption(f"Reading local Delta tables from `{rel_data_dir}/` — no Spark session "
-               "in this app; the buttons above shell out to the real pipeline.")
+    source_dir = "dashboard/sample_data/" if data.using_sample_data() else "data/"
+    st.caption(f"Reading Delta tables from `{source_dir}` — no Spark session in this app; "
+               "the buttons above shell out to the real pipeline.")
     st.caption("Unity Catalog enforcement and Power BI/XMLA checks require a live Azure "
                "workspace and aren't available here — see `docs/azure_service_mapping.md`.")
 
@@ -161,12 +178,17 @@ if summary is None or summary.empty:
         'CI/CD.</p></div>',
         unsafe_allow_html=True,
     )
+    empty_sub = (
+        'Click <b>▶️ Run reconciliation</b> in the sidebar to generate a sample HRIS + '
+        'payroll dataset, run it through bronze → silver → gold, and populate this dashboard.'
+        if PIPELINE_AVAILABLE else
+        'This hosted demo has no local pipeline and no committed sample data to fall back '
+        'on. Clone the repo and run <code>make run</code> to generate data locally.'
+    )
     st.markdown(
         '<div class="rg-empty"><div class="rg-empty-emoji">🌱</div>'
         '<div class="rg-empty-title">No pipeline runs yet</div>'
-        '<p class="rg-empty-sub">Click <b>▶️ Run reconciliation</b> in the sidebar to '
-        'generate a sample HRIS + payroll dataset, run it through bronze → silver → gold, '
-        'and populate this dashboard.</p></div>',
+        f'<p class="rg-empty-sub">{empty_sub}</p></div>',
         unsafe_allow_html=True,
     )
     st.stop()
@@ -192,6 +214,9 @@ if prior is not None:
     prior_rate = (prior["matched"] / prior_total * 100) if prior_total else 0.0
     match_rate_delta = round(match_rate - prior_rate, 1)
 
+sample_pill = (f'<span class="rg-pill" style="border-color:{theme.STATUS["warning"]}66;'
+               f'color:{theme.STATUS["warning"]};">📦 Sample data snapshot</span>'
+               if data.using_sample_data() else "")
 st.markdown(
     f'''<div class="rg-hero">
       <div class="rg-hero-title">🛡️ ReconGuard</div>
@@ -201,6 +226,7 @@ st.markdown(
         <span class="rg-pill">📅 Pay period {rules["pay_period"]}</span>
         <span class="rg-pill">🕓 Last run {latest["run_ts"]:%b %d, %Y · %H:%M}</span>
         <span class="rg-pill">🧮 {len(summary)} run(s) tracked</span>
+        {sample_pill}
       </div>
     </div>''',
     unsafe_allow_html=True,

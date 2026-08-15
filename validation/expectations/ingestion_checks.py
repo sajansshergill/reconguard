@@ -1,8 +1,9 @@
 """Schema, freshness and completeness checks for bronze tables."""
-from datetime import date, timedelta
+from datetime import timedelta
+
 from pyspark.sql import functions as F
 
-SIM_TODAY = date(2026, 7, 28)  # generated data doesn't age, so "now" is fixed
+from validation.expectations.sim_clock import SIM_TODAY
 
 
 def check_required_columns(df, required: list[str]) -> dict:
