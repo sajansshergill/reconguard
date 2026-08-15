@@ -197,6 +197,13 @@ reconguard/
 │   ├── setup_unity_catalog.py            # creates catalog, schemas, tags
 │   └── run_local.py                      # runs the full flow on local Spark
 │
+├── dashboard/                            # local-only Streamlit UI (not part of the pipeline)
+│   ├── app.py                            # page layout, KPIs, tabs
+│   ├── charts.py                         # Plotly figure builders
+│   ├── theme.py                          # design tokens + CSS
+│   ├── data.py                           # Spark-free reads of the local Delta tables
+│   └── requirements.txt
+│
 └── docs/
     ├── architecture.md                   # diagram + component walkthrough
     ├── data_model.md                     # bronze/silver/gold + audit-table schemas
@@ -223,6 +230,18 @@ python data_generator/generate.py
 pytest tests/
 ```
 The reconciliation engine, DLT-equivalent expectations, and PII checks all run locally. Unity Catalog and the Power BI XMLA check require the Azure workspace.
+
+### Dashboard
+
+A local Streamlit app reads the Delta tables `run_local.py` writes — break trends across runs, a drill-down into individual reconciliation breaks, the PII/governance and ingestion-gate checks, and workforce/payroll aggregates. It's the local stand-in for the Power BI report layer.
+
+```bash
+pip install -r dashboard/requirements.txt   # or: make dashboard-setup
+make run                                    # populate data/, at least once
+make dashboard                              # or: streamlit run dashboard/app.py
+```
+
+It opens without a Spark session (reads Delta via `deltalake`, not PySpark); the sidebar's **Run reconciliation** / **New demo run** buttons shell out to `scripts/run_local.py` when you want fresh data.
 
 ---
 

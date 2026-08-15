@@ -1,0 +1,65 @@
+# Honest gaps
+
+This is a portfolio build, not a production system. Where something is
+simulated, partial, or a known limitation, it's documented here rather than
+papered over.
+
+## Simulated / requires Azure
+
+- **Source systems are simulated.** `data_generator/` produces the HRIS and
+  payroll extracts, with deliberately injected breaks (`break_injector.py`),
+  rather than pulling from a real Workday/PeopleSoft/ADP instance. The
+  generator is seeded, so runs are reproducible.
+- **Unity Catalog requires a real Databricks workspace.** Locally,
+  `validation/pii/tag_checks.check_tags_local()` checks sensitive columns
+  against a governance *manifest* (the tags you intend to apply), not a real
+  catalog. This proves the check logic, not that a masking policy is
+  actually enforced at query time — that only happens against a workspace
+  (`check_tags_unity()`). See [azure_service_mapping.md](azure_service_mapping.md).
+- **Delta Live Tables requires a DLT pipeline.** The `dlt_*.py` files in
+  `pipelines/*/` are real DLT definitions with `@dlt.expect*` decorators, but
+  they only execute inside a Databricks DLT pipeline. Locally, the same
+  transform + expectation logic is duplicated as plain PySpark functions
+  (`ingest_*.py`, `conform_*.py`) called explicitly from
+  `scripts/run_local.py` and `validation/expectations/`.
+- **Power BI report validation requires a Power BI workspace with XMLA read
+  enabled.** `validation/reporting/xmla_client.py` is a real client shape
+  (`query(dax)`) but its Databricks-side implementation is stubbed —
+  `raise NotImplementedError("Configure pyadomd + workspace credentials")` —
+  since there's no workspace to query against in this environment. The local
+  path (`report_reconcile.reconcile_report_local()`) validates the same
+  concept by re-aggregating from silver instead of querying Power BI.
+- **Azure Data Factory / Azure DevOps against a real subscription.** The ADF
+  pipeline (`adf/pipeline_reconguard.json`) and linked services are valid
+  definitions but were never deployed against a live Azure subscription for
+  this build; the Azure DevOps pipelines (`.azure-pipelines/`) are written to
+  run today against the local path (`scripts/run_local.py`), which is what
+  actually executes in CI.
+
+## Scale and scope
+
+- **Scale is representative, not enterprise.** The generator defaults to 200
+  employees (`build_employees(n=200)`), sized to exercise every break type
+  clearly, not to demonstrate throughput at production volumes.
+- **Reconciliation compares one value pair per key per call.**
+  `reconcile()` takes a single `left_value_col`/`right_value_col` pair
+  (currently `gross_pay` vs. `expected_gross`); reconciling multiple columns
+  per key in one pass isn't implemented — see
+  [reconciliation_design.md](reconciliation_design.md#extending-it).
+- **`config/settings.yaml`'s `environment: local | azure` flag is a
+  placeholder.** Nothing in the codebase currently branches on it; switching
+  to Azure today means running the DLT pipeline in a real workspace, not
+  toggling this value.
+
+## Known limitations, not gaps
+
+These are deliberate design choices, not missing work:
+
+- `validation/expectations/ingestion_checks.check_freshness()` anchors "now"
+  to a fixed simulated date (`2026-07-28`) rather than `date.today()`, so
+  freshness checks stay deterministic against generated data that doesn't
+  age. A real deployment would use `date.today()`.
+- The reconciliation tolerance (`config/reconciliation_rules.yaml:
+  tolerance`) is an absolute currency amount, not a percentage — appropriate
+  for payroll rounding differences, which are small and constant in
+  magnitude rather than proportional to salary.

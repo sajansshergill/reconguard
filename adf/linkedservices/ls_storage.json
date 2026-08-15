@@ -1,0 +1,7 @@
+{
+    "name": "ls_storage",
+    "properties": {
+      "type": "AzureBlobFS",
+      "typeProperties": {"url": "https://reconguard.dfs.core.windows.net"}
+    }
+  }

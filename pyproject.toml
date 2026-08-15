@@ -8,7 +8,12 @@ requires-python = ">=3.10"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-q"
+pythonpath = ["."]
 
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+
+[tool.ruff.lint.per-file-ignores]
+# `spark` is injected as a global by the Databricks DLT runtime, not imported.
+"pipelines/bronze/dlt_bronze.py" = ["F821"]

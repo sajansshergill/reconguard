@@ -1,0 +1,20 @@
+{
+    "name": "pipeline_reconguard",
+    "properties": {
+      "activities": [
+        {
+          "name": "IngestBronze",
+          "type": "DatabricksNotebook",
+          "linkedServiceName": {"referenceName": "ls_databricks", "type": "LinkedServiceReference"},
+          "typeProperties": {"notebookPath": "/reconguard/pipelines/bronze/dlt_bronze"}
+        },
+        {
+          "name": "RunValidationGate",
+          "type": "DatabricksNotebook",
+          "dependsOn": [{"activity": "IngestBronze", "dependencyConditions": ["Succeeded"]}],
+          "linkedServiceName": {"referenceName": "ls_databricks", "type": "LinkedServiceReference"},
+          "typeProperties": {"notebookPath": "/reconguard/scripts/run_validation_gate"}
+        }
+      ]
+    }
+  }

@@ -1,0 +1,4 @@
+[
+    {"employee_id": "E00001", "pay_period": "2026-07", "gross_pay": 10000.0,
+     "net_pay": 7200.0, "bank_account": "GB00XXXX0000000000", "run_date": "2026-07-28"}
+  ]

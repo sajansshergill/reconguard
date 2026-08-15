@@ -1,0 +1,10 @@
+{
+    "name": "daily_trigger",
+    "properties": {
+      "type": "ScheduleTrigger",
+      "typeProperties": {
+        "recurrence": {"frequency": "Day", "interval": 1, "startTime": "2026-08-01T06:00:00Z"}
+      },
+      "pipelines": [{"pipelineReference": {"referenceName": "pipeline_reconguard", "type": "PipelineReference"}}]
+    }
+  }

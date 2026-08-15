@@ -1,0 +1,8 @@
+# The dashboard is a local-only add-on, not part of the validated pipeline —
+# kept separate from the root requirements.txt so `pip install -r requirements.txt`
+# stays focused on what CI actually needs.
+streamlit==1.61.1
+deltalake==1.6.2
+plotly==6.9.0
+pandas>=2.1
+pyyaml==6.0.2

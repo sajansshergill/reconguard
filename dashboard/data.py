@@ -1,0 +1,196 @@
+"""Data-access layer for the ReconGuard dashboard.
+
+Reads directly from the local Delta tables written by scripts/run_local.py.
+Deliberately Spark-free — uses `deltalake` (delta-rs) to read straight into
+pandas, so the dashboard opens in under a second instead of paying Spark's
+session-startup cost on every page load. Spark only re-enters the picture
+when the user triggers a pipeline run from the sidebar, which shells out to
+scripts/run_local.py as a subprocess.
+
+Nothing in this module depends on Streamlit — it's a plain data layer, unit
+testable on its own, that dashboard/app.py wraps with caching.
+"""
+from __future__ import annotations
+
+import sys
+from datetime import timedelta
+from pathlib import Path
+
+import pandas as pd
+import yaml
+from deltalake import DeltaTable
+from deltalake.exceptions import TableNotFoundError
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
+
+from validation.expectations.ingestion_checks import SIM_TODAY  # noqa: E402
+from validation.pii.mask_checks import check_no_pii_in_gold  # noqa: E402
+
+CONFIG_DIR = REPO_ROOT / "config"
+
+
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
+
+def load_settings() -> dict:
+    return yaml.safe_load((CONFIG_DIR / "settings.yaml").read_text())
+
+
+def load_rules() -> dict:
+    return yaml.safe_load((CONFIG_DIR / "reconciliation_rules.yaml").read_text())
+
+
+def load_pii_policy() -> dict:
+    return yaml.safe_load((CONFIG_DIR / "pii_policy.yaml").read_text())
+
+
+def load_expectations() -> dict:
+    return yaml.safe_load((CONFIG_DIR / "expectations.yaml").read_text())
+
+
+def data_paths() -> dict[str, Path]:
+    return {k: REPO_ROOT / v for k, v in load_settings()["paths"].items()}
+
+
+# ---------------------------------------------------------------------------
+# Delta reads
+# ---------------------------------------------------------------------------
+
+def read_delta(path: Path) -> pd.DataFrame | None:
+    """Read a Delta table as a pandas DataFrame, or None if it hasn't been
+    written yet (pipeline never run, or run failed before that stage)."""
+    try:
+        return DeltaTable(str(path)).to_pandas()
+    except TableNotFoundError:
+        return None
+
+
+def get_bronze_hris() -> pd.DataFrame | None:
+    return read_delta(data_paths()["bronze"] / "hris")
+
+
+def get_bronze_payroll() -> pd.DataFrame | None:
+    return read_delta(data_paths()["bronze"] / "payroll")
+
+
+def get_silver_employees() -> pd.DataFrame | None:
+    return read_delta(data_paths()["silver"] / "employees")
+
+
+def get_silver_payroll() -> pd.DataFrame | None:
+    return read_delta(data_paths()["silver"] / "payroll")
+
+
+def get_gold_headcount() -> pd.DataFrame | None:
+    return read_delta(data_paths()["gold"] / "headcount_by_dept")
+
+
+def get_gold_payroll_summary() -> pd.DataFrame | None:
+    return read_delta(data_paths()["gold"] / "payroll_summary")
+
+
+def get_reconciliation_summary() -> pd.DataFrame | None:
+    df = read_delta(data_paths()["audit"] / "reconciliation_summary")
+    if df is None or df.empty:
+        return df
+    df = df.copy()
+    df["run_ts"] = pd.to_datetime(df["run_ts"])
+    return df.sort_values("run_ts").reset_index(drop=True)
+
+
+def get_reconciliation_detail(run_id: str | None = None) -> pd.DataFrame | None:
+    df = read_delta(data_paths()["audit"] / "reconciliation_detail")
+    if df is None or run_id is None:
+        return df
+    return df[df["run_id"] == run_id].reset_index(drop=True)
+
+
+def has_any_data() -> bool:
+    return get_reconciliation_summary() is not None
+
+
+# ---------------------------------------------------------------------------
+# PII / governance
+# ---------------------------------------------------------------------------
+
+def pii_gold_checks() -> list[dict]:
+    """Real checks against the actual local gold tables — not simulated.
+
+    Unity Catalog tag/mask *enforcement* can't be verified locally (there's
+    no catalog); that half is Azure-only, see docs/azure_service_mapping.md.
+    """
+    policy = load_pii_policy()
+    excluded = policy["excluded_from_gold"]
+    tables = {
+        "gold.payroll_summary": get_gold_payroll_summary(),
+        "gold.headcount_by_dept": get_gold_headcount(),
+    }
+    results = []
+    for name, df in tables.items():
+        if df is None:
+            continue
+        result = check_no_pii_in_gold(df, excluded)
+        result["table"] = name
+        results.append(result)
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Ingestion expectations — pandas-native equivalents of
+# validation/expectations/ingestion_checks.py (which takes Spark DataFrames).
+# Same rules, same thresholds from config/expectations.yaml, same SIM_TODAY
+# anchor — just evaluated against the pandas reads above instead.
+# ---------------------------------------------------------------------------
+
+def check_required_columns(df: pd.DataFrame, required: list[str]) -> dict:
+    missing = [c for c in required if c not in df.columns]
+    return {"check": "required_columns", "passed": not missing, "missing": missing}
+
+
+def check_completeness(df: pd.DataFrame, column: str, max_null_rate: float) -> dict:
+    total = len(df)
+    nulls = int(df[column].isna().sum()) if column in df.columns else total
+    rate = (nulls / total) if total else 0.0
+    return {
+        "check": f"completeness[{column}]",
+        "passed": rate <= max_null_rate,
+        "null_rate": round(rate, 4),
+    }
+
+
+def check_freshness(df: pd.DataFrame, run_date_col: str, max_age_days: int) -> dict:
+    newest = pd.to_datetime(df[run_date_col]).max() if run_date_col in df.columns else None
+    cutoff = SIM_TODAY - timedelta(days=max_age_days)
+    passed = pd.notna(newest) and newest.date() >= cutoff
+    return {
+        "check": "freshness",
+        "passed": bool(passed),
+        "newest": str(newest.date()) if pd.notna(newest) else None,
+    }
+
+
+def ingestion_gate() -> dict[str, list[dict]]:
+    """Run every expectations.yaml check against the current bronze tables."""
+    exp = load_expectations()
+    hris, payroll = get_bronze_hris(), get_bronze_payroll()
+    results: dict[str, list[dict]] = {"hris": [], "payroll": []}
+
+    if hris is not None:
+        results["hris"].append(
+            check_required_columns(hris, exp["required_columns"]["hris"]))
+        for col, max_rate in exp["completeness"].items():
+            if col in hris.columns:
+                results["hris"].append(check_completeness(hris, col, max_rate))
+
+    if payroll is not None:
+        results["payroll"].append(
+            check_required_columns(payroll, exp["required_columns"]["payroll"]))
+        for col, max_rate in exp["completeness"].items():
+            if col in payroll.columns:
+                results["payroll"].append(check_completeness(payroll, col, max_rate))
+        results["payroll"].append(
+            check_freshness(payroll, "run_date", exp["freshness_days"]))
+
+    return results

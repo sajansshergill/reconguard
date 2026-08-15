@@ -1,0 +1,5 @@
+[
+    {"employee_id": "E00001", "first_name": "Ada", "last_name": "Lovelace",
+     "department": "Engineering", "national_id": "111-22-3333",
+     "base_salary": 120000.0, "effective_date": "2026-01-01", "is_current": true}
+  ]

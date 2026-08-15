@@ -1,0 +1,8 @@
+steps:
+  - script: pytest --junitxml=test-results.xml
+    displayName: Run tests
+  - task: PublishTestResults@2
+    condition: always()
+    inputs:
+      testResultsFiles: test-results.xml
+      testRunTitle: ReconGuard

@@ -7,3 +7,4 @@ metastore_db/
 derby.log
 .pytest_cache/
 .ruff_cache/
+.venv/
