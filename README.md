@@ -6,6 +6,8 @@ ReconGuard sits on top of a Databricks medallion pipeline and validates every ho
 
 Most data pipelines treat testing as a few spot-check queries run by hand. ReconGuard treats data validation the way you'd treat application test coverage: reusable, parameterized, versioned, and enforced by a pipeline that refuses to promote data that fails.
 
+![ReconGuard demo](docs/demo.gif)
+
 ---
 
 ## Why this exists
@@ -232,17 +234,24 @@ pytest tests/
 ```
 The reconciliation engine, DLT-equivalent expectations, and PII checks all run locally. Unity Catalog and the Power BI XMLA check require the Azure workspace.
 
-### Dashboard
+### Dashboard — the console
 
-A local Streamlit app reads the Delta tables `run_local.py` writes — break trends across runs, a drill-down into individual reconciliation breaks, the PII/governance and ingestion-gate checks, and workforce/payroll aggregates. It's the local stand-in for the Power BI report layer.
+A local Streamlit console reads the Delta tables `run_local.py` writes. It's the local stand-in for the Power BI report layer, and the place the validation results become explorable:
+
+- **Live filters in the sidebar** — runs in view, departments, break types, a minimum |pay variance| threshold, and an only-breaks toggle. Every KPI, chart and table on the page re-renders from the same filtered frames.
+- **KPI cards with deltas** — records reconciled, match rate, breaks detected, PII-in-gold status and runs tracked, each compared against the prior run.
+- **Reconciliation views** — the stacked break trend across runs, the latest run's composition bar, and a drill-down table of individual breaks (payroll gross vs HRIS-expected, styled by status).
+- **Animated views** — press ▶ Play and the break composition and the per-record payroll-vs-expected scatter replay run by run (native Plotly `animation_frame`).
+- **3D break space** — every reconciled record as a point in expected-pay × payroll-gross × |variance| space (drag to rotate, scroll to zoom; matched records hug the floor, mismatches rise out of it), plus a department × break-type surface of break counts.
+- **Governance & workforce tabs** — the sensitive-column policy and real PII-in-gold checks, the ingestion validation gate against the bronze tables, and headcount / average-salary / payroll aggregates by department.
+
+The console uses a gradient glass-dark theme and opens without a Spark session (it reads Delta via `deltalake`, not PySpark); the sidebar's **Run reconciliation** / **New demo run** buttons shell out to `scripts/run_local.py` when you want fresh data.
 
 ```bash
 pip install -r dashboard/requirements.txt   # or: make dashboard-setup
 make run                                    # populate data/, at least once
 make dashboard                              # or: streamlit run dashboard/app.py
 ```
-
-It opens without a Spark session (reads Delta via `deltalake`, not PySpark); the sidebar's **Run reconciliation** / **New demo run** buttons shell out to `scripts/run_local.py` when you want fresh data.
 
 **Hosted demo:** deployed at Streamlit Community Cloud, main file `dashboard/app.py`, requirements `dashboard/requirements.txt`. PySpark isn't in that requirements file (too heavy for a read-only dashboard, unreliable on the free tier), so the hosted version disables the pipeline buttons and reads a static snapshot committed at `dashboard/sample_data/` instead of a live run — see [docs/gaps.md](docs/gaps.md).
 

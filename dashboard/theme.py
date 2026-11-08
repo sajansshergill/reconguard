@@ -106,7 +106,9 @@ html, body, [class*="css"] {{
     font-family: {FONT_STACK};
 }}
 .stApp {{
-    background: {PAGE_BG};
+    background: radial-gradient(1200px 600px at 15% -10%, rgba(57,135,229,0.22), rgba(13,13,13,0) 55%),
+                radial-gradient(1000px 520px at 92% 0%, rgba(213,81,129,0.16), rgba(13,13,13,0) 50%),
+                {PAGE_BG};
 }}
 #MainMenu, footer, header {{ visibility: hidden; }}
 
@@ -127,8 +129,10 @@ html, body, [class*="css"] {{
     background: {ACCENT_GRADIENT};
 }}
 .rg-hero-title {{
-    font-size: 1.9rem; font-weight: 800; color: {TEXT_PRIMARY};
+    font-size: 1.9rem; font-weight: 800;
     margin: 0 0 4px 0; letter-spacing: -0.02em;
+    background: linear-gradient(90deg, #9fd0ff, #c3b3ff, #ffb3d1);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
 }}
 .rg-hero-sub {{
     font-size: 0.95rem; color: {TEXT_SECONDARY}; margin: 0;
@@ -142,11 +146,13 @@ html, body, [class*="css"] {{
 
 /* ---- KPI tiles ---- */
 .rg-kpi {{
-    background: {SURFACE};
-    border: 1px solid {BORDER};
+    background: linear-gradient(135deg, rgba(57,135,229,0.14), rgba(255,255,255,0.03) 45%, rgba(213,81,129,0.10));
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(140,180,255,0.28);
     border-radius: 16px;
     padding: 18px 20px;
     height: 100%;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.35);
     transition: border-color 0.15s ease, transform 0.15s ease;
 }}
 .rg-kpi:hover {{ border-color: rgba(255,255,255,0.22); transform: translateY(-1px); }}

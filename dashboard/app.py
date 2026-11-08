@@ -14,6 +14,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pandas as pd
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -76,6 +77,16 @@ def cached_policy():
 @st.cache_data(ttl=30, show_spinner=False)
 def cached_rules():
     return data.load_rules()
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def cached_all_detail():
+    return data.get_reconciliation_detail(None)
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def cached_employees():
+    return data.get_silver_employees()
 
 
 # ---------------------------------------------------------------------------
@@ -195,6 +206,67 @@ if summary is None or summary.empty:
 
 
 # ---------------------------------------------------------------------------
+# Global sidebar filters — every view below reads the filtered frames
+# ---------------------------------------------------------------------------
+_all_detail_raw = cached_all_detail()
+_employees = cached_employees()
+if _all_detail_raw is not None and not _all_detail_raw.empty:
+    all_detail = _all_detail_raw.copy()
+    all_detail["run_ts"] = pd.to_datetime(all_detail["run_ts"])
+    if _employees is not None and not _employees.empty and "department" in _employees.columns:
+        dept_map = (_employees.drop_duplicates("employee_id")
+                    .set_index("employee_id")["department"].to_dict())
+        all_detail["department"] = all_detail["employee_id"].map(dept_map)
+    else:
+        all_detail["department"] = None
+    all_detail["department"] = all_detail["department"].fillna("Payroll only")
+    all_detail["abs_variance"] = (all_detail["left_value"] - all_detail["right_value"]).abs()
+else:
+    all_detail = _all_detail_raw
+
+_dept_options = sorted(all_detail["department"].dropna().unique()) if all_detail is not None and not all_detail.empty else []
+_max_var = float(all_detail["abs_variance"].max()) if all_detail is not None and not all_detail.empty else 0.0
+
+with st.sidebar:
+    st.divider()
+    st.markdown("**🎛️ Live filters**")
+    st.caption("Every chart, table and KPI on this page re-renders from these.")
+    run_count = st.slider("Runs in view (most recent)", 1, max(len(summary), 1),
+                          len(summary))
+    sel_depts = st.multiselect("Departments", _dept_options, default=_dept_options)
+    sel_breaks = st.multiselect(
+        "Break types", options=theme.BREAK_ORDER,
+        format_func=lambda bt: theme.BREAK_LABEL[bt], default=theme.BREAK_ORDER,
+    )
+    min_variance = st.slider("Min |pay variance| ($)", 0.0, max(_max_var, 10.0), 0.0, 10.0)
+    only_breaks = st.checkbox("Only breaks (hide matched)", value=False)
+
+summary = summary.tail(run_count).reset_index(drop=True)
+if not sel_breaks:
+    sel_breaks = theme.BREAK_ORDER
+
+
+def apply_global(detail_df):
+    """Apply the sidebar filters to a reconciliation-detail frame."""
+    if detail_df is None or detail_df.empty:
+        return detail_df
+    out = detail_df.copy()
+    if "department" not in out.columns and all_detail is not None and not all_detail.empty:
+        dm = all_detail.drop_duplicates("employee_id").set_index("employee_id")["department"].to_dict()
+        out["department"] = out["employee_id"].map(dm)
+    if "abs_variance" not in out.columns:
+        out["abs_variance"] = (out["left_value"] - out["right_value"]).abs()
+    out = out[out["break_type"].isin(sel_breaks)]
+    if sel_depts and "department" in out.columns:
+        out = out[out["department"].isin(sel_depts)]
+    if min_variance > 0:
+        out = out[out["abs_variance"] >= min_variance]
+    if only_breaks:
+        out = out[out["break_type"] != "matched"]
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Hero + KPI row
 # ---------------------------------------------------------------------------
 latest = summary.iloc[-1]
@@ -251,16 +323,57 @@ st.write("")
 # ---------------------------------------------------------------------------
 # Tabs
 # ---------------------------------------------------------------------------
-tab_recon, tab_gov, tab_work = st.tabs(
-    ["🔍  Reconciliation", "🔐  Governance & PII", "🧑‍🤝‍🧑  Workforce & payroll"]
+tab_recon, tab_anim, tab_3d, tab_gov, tab_work = st.tabs(
+    ["🔍  Reconciliation", "🎬  Animated breaks", "🧊  3D break space",
+     "🔐  Governance & PII", "🧑‍🤝‍🧑  Workforce & payroll"]
 )
+
+with tab_anim:
+    with st.container(border=True):
+        section("🎬 Animated breaks",
+                "Native Plotly animation — press ▶ Play and the break composition and the "
+                "per-record pay scatter replay run by run. Sidebar filters apply here too.")
+        st.plotly_chart(charts.animated_break_chart(summary, sel_breaks),
+                        use_container_width=True, config={"displayModeBar": False})
+    with st.container(border=True):
+        section("Payroll vs expected, animated")
+        anim_detail = apply_global(all_detail)
+        if anim_detail is not None and not anim_detail.empty:
+            st.plotly_chart(charts.animated_pay_scatter(anim_detail),
+                            use_container_width=True, config={"displayModeBar": False})
+        else:
+            st.info("No detail rows match the current filters.")
+
+with tab_3d:
+    with st.container(border=True):
+        section("🧊 3D break space",
+                "Drag to rotate, scroll to zoom. Each point is one reconciled record in the "
+                "latest run in view: expected pay × payroll gross × absolute variance, "
+                "coloured by break type and sized by variance — matched records hug the "
+                "floor, mismatches rise out of it.")
+        latest_detail = apply_global(
+            all_detail[all_detail["run_id"] == latest["run_id"]] if all_detail is not None and not all_detail.empty else all_detail
+        )
+        if latest_detail is not None and not latest_detail.empty:
+            st.plotly_chart(charts.detail_3d_chart(latest_detail),
+                            use_container_width=True, config={"displayModeBar": False})
+        else:
+            st.info("No detail rows match the current filters.")
+    with st.container(border=True):
+        section("Break surface — department × break type")
+        surf_detail = apply_global(all_detail)
+        surf_fig = charts.break_surface_chart(surf_detail) if surf_detail is not None else None
+        if surf_fig is not None:
+            st.plotly_chart(surf_fig, use_container_width=True, config={"displayModeBar": False})
+        else:
+            st.info("Not enough department coverage in the current filter for a surface.")
 
 with tab_recon:
     with st.container(border=True):
         section("Break trend across runs",
                 "Every reconciliation run is appended to the audit table — nothing is "
                 "overwritten, so breaks trend over time instead of only showing the latest snapshot.")
-        st.plotly_chart(charts.break_trend_chart(summary), use_container_width=True,
+        st.plotly_chart(charts.break_trend_chart(summary, sel_breaks), use_container_width=True,
                          config={"displayModeBar": False})
 
     with st.container(border=True):
@@ -300,7 +413,7 @@ with tab_recon:
 
         detail = cached_detail(selected_run)
         if detail is not None and not detail.empty:
-            view = detail.copy()
+            view = apply_global(detail)
             if type_filter:
                 view = view[view["break_type"].isin(type_filter)]
             if search:
@@ -392,6 +505,8 @@ with tab_gov:
 with tab_work:
     payroll_summary_df = cached_payroll_summary()
     headcount_df = cached_headcount()
+    if headcount_df is not None and not headcount_df.empty and sel_depts:
+        headcount_df = headcount_df[headcount_df["department"].isin(sel_depts)]
 
     if payroll_summary_df is not None and not payroll_summary_df.empty:
         row = payroll_summary_df.iloc[-1]
